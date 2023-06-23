@@ -17,7 +17,6 @@ import (
 const (
 	httpContentEncodingHeader = "Content-Encoding"
 	httpContentTypeHeader     = "Content-Type"
-	gzipEncoding              = "gzip"
 	contentType               = "application/json"
 	folderSuffix              = "/"
 )

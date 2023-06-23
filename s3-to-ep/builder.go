@@ -28,6 +28,7 @@ const (
 	defaultSourcetype = "archived_data"
 	defaultIndex      = "main"
 	defaultHostName   = "unknownHost"
+	gzipEncoding      = "gzip"
 
 	formattedEndpointSuffix = "/services/collector"
 	rawEndpointSuffix       = "/services/collector/raw"
@@ -138,10 +139,10 @@ func buildHTTPReq(record events.S3EventRecord, s3Content string) (*http.Request,
 		return nil, err
 	}
 
-	encodingMethod := os.Getenv(encodingMethodEnvKey)
+	encodingMethod := strings.ToLower(os.Getenv(encodingMethodEnvKey))
 	if encodingMethod != "" {
 		if encodingMethod != gzipEncoding {
-			return nil, fmt.Errorf("%s is not supported. Only GZIP is supported", encodingMethod)
+			return nil, fmt.Errorf("%s is not supported. Only gzip is supported", encodingMethod)
 		}
 		req.Header.Set(httpContentEncodingHeader, encodingMethod)
 	}
