@@ -88,13 +88,13 @@ func Test_buildHTTPClient_envSet_hasTLS(t *testing.T) {
 
 func Test_buildHTTPReq_noCustomizedEnv_success(t *testing.T) {
 	const (
-		testURL      = "http://localhost"
+		epHost       = "http://localhost"
 		source       = "test-source"
 		eventContent = "s3-content"
 	)
-	assert.NoError(t, os.Setenv(epHECEndpointEnvKey, testURL))
+	assert.NoError(t, os.Setenv(epHostEnvKey, epHost))
 	t.Cleanup(func() {
-		_ = os.Unsetenv(epHECEndpointEnvKey)
+		_ = os.Unsetenv(epHostEnvKey)
 	})
 
 	curTime := time.Time{}
@@ -110,7 +110,7 @@ func Test_buildHTTPReq_noCustomizedEnv_success(t *testing.T) {
 	assert.Equal(t, contentType, req.Header.Get(httpContentTypeHeader))
 	assert.Equal(t, http.MethodPost, req.Method)
 	assert.NotNil(t, req.URL)
-	assert.Equal(t, testURL, req.URL.String())
+	assert.Equal(t, epHost+formattedEndpointSuffix, req.URL.String())
 
 	body, err := io.ReadAll(req.Body)
 	assert.NoError(t, err)
@@ -140,12 +140,12 @@ func Test_buildHTTPReq_allCustomizedEnv_success(t *testing.T) {
 		customIndex      = "test-index"
 		eventContent     = "s3-content"
 	)
-	assert.NoError(t, os.Setenv(epHECEndpointEnvKey, testURL))
+	assert.NoError(t, os.Setenv(epHostEnvKey, testURL))
 	assert.NoError(t, os.Setenv(sourcetypeEnvKey, customSourcetype))
 	assert.NoError(t, os.Setenv(indexEnvKey, customIndex))
 	assert.NoError(t, os.Setenv(encodingMethodEnvKey, gzipEncoding))
 	t.Cleanup(func() {
-		_ = os.Unsetenv(epHECEndpointEnvKey)
+		_ = os.Unsetenv(epHostEnvKey)
 		_ = os.Unsetenv(sourcetypeEnvKey)
 		_ = os.Unsetenv(indexEnvKey)
 		_ = os.Unsetenv(encodingMethodEnvKey)
@@ -165,7 +165,7 @@ func Test_buildHTTPReq_allCustomizedEnv_success(t *testing.T) {
 	assert.Equal(t, gzipEncoding, req.Header.Get(httpContentEncodingHeader))
 	assert.Equal(t, http.MethodPost, req.Method)
 	assert.NotNil(t, req.URL)
-	assert.Equal(t, testURL, req.URL.String())
+	assert.Equal(t, testURL+formattedEndpointSuffix, req.URL.String())
 
 	body, err := io.ReadAll(req.Body)
 	assert.NoError(t, err)
@@ -187,11 +187,55 @@ func Test_buildHTTPReq_allCustomizedEnv_success(t *testing.T) {
 	}, event)
 }
 
+func Test_buildHTTPReq_rawEvent_success(t *testing.T) {
+	const (
+		epHost       = "http://localhost"
+		source       = "test-source"
+		eventContent = "s3-content"
+	)
+	assert.NoError(t, os.Setenv(epHostEnvKey, epHost))
+	assert.NoError(t, os.Setenv(eventIsRawEnvKey, "true"))
+	t.Cleanup(func() {
+		_ = os.Unsetenv(epHostEnvKey)
+		_ = os.Unsetenv(eventIsRawEnvKey)
+	})
+
+	curTime := time.Time{}
+	record := events.S3EventRecord{
+		EventSource: source,
+		EventTime:   curTime,
+	}
+
+	req, err := buildHTTPReq(record, eventContent)
+	assert.NoError(t, err)
+	assert.NotNil(t, req)
+
+	assert.Equal(t, contentType, req.Header.Get(httpContentTypeHeader))
+	assert.Equal(t, http.MethodPost, req.Method)
+
+	expectedHost, err := os.Hostname()
+	assert.NoError(t, err)
+
+	// assert URL
+	assert.NotNil(t, req.URL)
+	assert.Equal(t, "localhost", req.URL.Host)
+	assert.Equal(t, rawEndpointSuffix, req.URL.Path)
+	queries := req.URL.Query()
+	assert.Equal(t, defaultSourcetype, queries.Get("sourcetype"))
+	assert.Equal(t, expectedHost, queries.Get("host"))
+	assert.Equal(t, record.EventSource, queries.Get("source"))
+	assert.Equal(t, defaultIndex, queries.Get("index"))
+
+	body, err := io.ReadAll(req.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, eventContent, string(body))
+}
+
 func Test_buildHTTPReq_unexpectedEncodingType_error(t *testing.T) {
-	assert.NoError(t, os.Setenv(epHECEndpointEnvKey, "http://www.splunk.com"))
+	assert.NoError(t, os.Setenv(epHostEnvKey, "http://www.splunk.com"))
 	assert.NoError(t, os.Setenv(encodingMethodEnvKey, "compress"))
 	t.Cleanup(func() {
-		_ = os.Unsetenv(epHECEndpointEnvKey)
+		_ = os.Unsetenv(epHostEnvKey)
 		_ = os.Unsetenv(encodingMethodEnvKey)
 	})
 

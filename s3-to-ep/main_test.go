@@ -36,9 +36,9 @@ func Test_handleS3Record_hecIngestionSuccess(t *testing.T) {
 		s3Content = "test-content"
 		testURL   = "http://localhost/services/collector"
 	)
-	assert.NoError(t, os.Setenv(epHECEndpointEnvKey, testURL))
+	assert.NoError(t, os.Setenv(epHostEnvKey, testURL))
 	t.Cleanup(func() {
-		_ = os.Unsetenv(epHECEndpointEnvKey)
+		_ = os.Unsetenv(epHostEnvKey)
 	})
 
 	record := events.S3EventRecord{

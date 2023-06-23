@@ -7,13 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
 )
 
 const (
-	epHECEndpointEnvKey         = "EDGE_PROCESSOR_HEC_ENDPOINT"
+	epHostEnvKey                = "EDGE_PROCESSOR_HOST"
 	epTLSClientCertEnvKey       = "TLS_CLIENT_CERT"
 	epTLSClientPrivateKeyEnvKey = "TLS_CLIENT_KEY"
 	epTLSCACertEnvKey           = "TLS_CLIENT_CA_CERT"
@@ -21,10 +23,14 @@ const (
 
 	sourcetypeEnvKey = "EVENT_SOURCETYPE"
 	indexEnvKey      = "EVENT_INDEX"
+	eventIsRawEnvKey = "EVENT_IS_RAW"
 
 	defaultSourcetype = "archived_data"
 	defaultIndex      = "main"
 	defaultHostName   = "unknownHost"
+
+	formattedEndpointSuffix = "/services/collector"
+	rawEndpointSuffix       = "/services/collector/raw"
 )
 
 type hecEvent struct {
@@ -66,19 +72,10 @@ func buildHTTPClient() (*http.Client, error) {
 	return client, nil
 }
 
-func buildHTTPReq(record events.S3EventRecord, s3Content string) (*http.Request, error) {
-	epURL := os.Getenv(epHECEndpointEnvKey)
-	if epURL == "" {
-		return nil, fmt.Errorf("%s has not been provided", epHECEndpointEnvKey)
+func buildPostBody(isRawEvent bool, record events.S3EventRecord, host, sourcetype, index, s3Content string) ([]byte, error) {
+	if isRawEvent {
+		return []byte(s3Content), nil
 	}
-
-	host, err := os.Hostname()
-	if err != nil {
-		host = defaultHostName
-	}
-
-	sourcetype := getEnvValueOrDefault(sourcetypeEnvKey, defaultSourcetype)
-	index := getEnvValueOrDefault(indexEnvKey, defaultIndex)
 
 	event := hecEvent{
 		Time:       record.EventTime.Unix(),
@@ -88,12 +85,55 @@ func buildHTTPReq(record events.S3EventRecord, s3Content string) (*http.Request,
 		Index:      index,
 		Event:      s3Content,
 	}
-	serializedEvent, err := json.Marshal(event)
+	return json.Marshal(event)
+}
+
+func buildURL(isRawEvent bool, host, source, sourcetype, index string) (string, error) {
+	epHost := os.Getenv(epHostEnvKey)
+	if epHost == "" {
+		return "", fmt.Errorf("%s has not been provided", epHostEnvKey)
+	}
+
+	parsedHostUrl, err := url.Parse(epHost)
+	if err != nil {
+		return "", err
+	}
+
+	if !isRawEvent {
+		parsedHostUrl.Path = formattedEndpointSuffix
+		return parsedHostUrl.String(), nil
+	}
+
+	parsedHostUrl.Path = rawEndpointSuffix
+	query := parsedHostUrl.Query()
+	query.Set("host", host)
+	query.Set("source", source)
+	query.Set("sourcetype", sourcetype)
+	query.Set("index", index)
+	parsedHostUrl.RawQuery = query.Encode()
+	return parsedHostUrl.String(), nil
+}
+
+func buildHTTPReq(record events.S3EventRecord, s3Content string) (*http.Request, error) {
+	host, err := os.Hostname()
+	if err != nil {
+		host = defaultHostName
+	}
+	isRawEvent := strings.ToLower(os.Getenv(eventIsRawEnvKey)) == "true"
+	sourcetype := getEnvValueOrDefault(sourcetypeEnvKey, defaultSourcetype)
+	index := getEnvValueOrDefault(indexEnvKey, defaultIndex)
+
+	epUrl, err := buildURL(isRawEvent, host, record.EventSource, sourcetype, index)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, epURL, bytes.NewBuffer(serializedEvent))
+	postBodyBytes, err := buildPostBody(isRawEvent, record, host, sourcetype, index, s3Content)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, epUrl, bytes.NewBuffer(postBodyBytes))
 	if err != nil {
 		return nil, err
 	}
