@@ -63,7 +63,7 @@ Here are some limitations:
   - if content is encoded, only GZIP encoded format is supported for now
   - if content is in parquet format, it won't be parsed properly
 - Build/Zip tool isn't tested on windows
-- EP can't handle line breaking yet for HEC receiver yet.
+- EP can't use users provided line breaking configurations for HEC raw data.
 
 ## Development
 
